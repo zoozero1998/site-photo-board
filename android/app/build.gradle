@@ -1,0 +1,43 @@
+plugins { id 'com.android.application' }
+
+def appUrl = project.findProperty('appUrl') ?: 'https://example.github.io/site-photo-board/'
+def verCode = (project.findProperty('versionCode') ?: '1') as Integer
+
+android {
+    namespace 'kr.sitephoto.board'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'kr.sitephoto.board'
+        minSdk 26
+        targetSdk 34
+        versionCode verCode
+        versionName "1.0.${verCode}"
+        buildConfigField 'String', 'APP_URL', "\"${appUrl}\""
+    }
+    buildFeatures { buildConfig true }
+
+    signingConfigs {
+        release {
+            storeFile file(System.getenv('KEYSTORE_FILE') ?: 'release.jks')
+            storePassword System.getenv('KEYSTORE_PASSWORD')
+            keyAlias System.getenv('KEY_ALIAS') ?: 'sitephoto'
+            keyPassword System.getenv('KEYSTORE_PASSWORD')
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.activity:activity:1.9.1'
+}

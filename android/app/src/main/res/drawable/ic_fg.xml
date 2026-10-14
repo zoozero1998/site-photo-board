@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Camera body with a small board table in the corner, on the 108dp adaptive canvas (safe zone 66dp). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:pathData="M30,40h10l4,-6h20l4,6h10a4,4 0,0 1,4 4v28a4,4 0,0 1,-4 4h-48a4,4 0,0 1,-4 -4v-28a4,4 0,0 1,4 -4z" />
+    <path android:fillColor="#1F5B46" android:pathData="M54,47a11,11 0,1 0,0.01 0z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M54,51a7,7 0,1 0,0.01 0z" />
+    <path android:fillColor="#FFFFFF" android:strokeColor="#1F5B46" android:strokeWidth="1.5" android:pathData="M62,62h18v14h-18z" />
+    <path android:strokeColor="#1F5B46" android:strokeWidth="1.2" android:pathData="M62,66.7h18M62,71.3h18M67,62v14" />
+</vector>
