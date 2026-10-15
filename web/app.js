@@ -3,15 +3,29 @@
   const IS_APP = /SitePhotoApp/.test(navigator.userAgent);
   const F = {name:$('f-name'),dong:$('f-dong'),floor:$('f-floor'),work:$('f-work'),date:$('f-date'),room:$('f-room'),note:$('f-note')};
   const ROWS = [['공사명','name'],['위 치','dong'],['층','floor'],['공종','work'],['일 자','date'],['실','room'],['내 용','note']];
-  let photos=[], openPhoto=null, unsub=null, queue=[], currentSrc=null;
+  let photos=[], openPhoto=null, queue=[], currentSrc=null, pollTimer=null;
 
-  if(!window.firebase || !window.FIREBASE_CONFIG || !window.FIREBASE_CONFIG.apiKey){
-    $('boot').innerHTML='<p class="status err">서버 설정이 아직 연결되지 않았어요. 인터넷 연결을 확인하거나 관리자에게 문의해 주세요.</p>';
+  const URL_=(window.APP_CONFIG||{}).scriptUrl;
+  if(!URL_){
+    $('boot').innerHTML='<p class="status err">저장 서버 주소가 아직 연결되지 않았어요. 관리자에게 문의해 주세요.</p>';
     return;
   }
-  firebase.initializeApp(window.FIREBASE_CONFIG);
-  const auth=firebase.auth(), fs=firebase.firestore(), st=firebase.storage();
-  auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
+  let pass=(()=>{try{return localStorage.getItem('pass')||''}catch(e){return ''}})();
+  class ApiError extends Error{ constructor(code){ super(code); this.code=code; } }
+  async function api(action,body){
+    let res;
+    try{
+      res=await fetch(URL_,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(Object.assign({action,pass},body||{}))});
+    }catch(e){ throw new ApiError('network'); }
+    let j; try{ j=await res.json(); }catch(e){ throw new ApiError('server'); }
+    if(!j.ok){ if(j.error==='auth'){ logout(true); } throw new ApiError(j.error||'server'); }
+    return j;
+  }
+  const thumbUrl=(p,w)=>'https://drive.google.com/thumbnail?id='+encodeURIComponent(p.fileId)+'&sz=w'+(w||480);
+  const altUrl=(p,w)=>'https://lh3.googleusercontent.com/d/'+encodeURIComponent(p.fileId)+'=w'+(w||480);
+  const viewUrl=p=>'https://drive.google.com/file/d/'+encodeURIComponent(p.fileId)+'/view';
+  // If Drive's thumbnail endpoint refuses an image, try the second host once.
+  document.addEventListener('error',e=>{ const im=e.target; if(im.tagName==='IMG'&&im.dataset.alt&&!im.dataset.tried){ im.dataset.tried='1'; im.src=im.dataset.alt; } },true);
 
   const today = () => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
   const dotDate = s => (s||'').replace(/-/g,'.');
@@ -20,26 +34,32 @@
   // ---------- login ----------
   $('login-form').addEventListener('submit',async e=>{
     e.preventDefault(); $('lg-err').textContent=''; $('lg-btn').disabled=true;
-    try{ await auth.signInWithEmailAndPassword($('lg-email').value.trim(),$('lg-pw').value); }
-    catch(err){
-      const c=err&&err.code||'';
-      $('lg-err').textContent = /invalid|wrong-password|user-not-found/.test(c)?'이메일 또는 비밀번호가 맞지 않아요.':c==='auth/too-many-requests'?'시도가 너무 많아요. 잠시 후 다시 해 주세요.':c==='auth/network-request-failed'?'인터넷 연결을 확인해 주세요.':'로그인하지 못했어요. ('+c+')';
-    }
+    pass=$('lg-pw').value;
+    try{ await api('ping'); try{localStorage.setItem('pass',pass)}catch(_){} enter(); }
+    catch(err){ $('lg-err').textContent = err.code==='auth'?'비밀번호가 맞지 않아요.':err.code==='network'?'인터넷 연결을 확인해 주세요.':'서버에 연결하지 못했어요. 잠시 후 다시 해 주세요.'; }
     $('lg-btn').disabled=false;
   });
-  $('btn-logout').onclick=()=>auth.signOut();
-
-  auth.onAuthStateChanged(u=>{
-    $('boot').hidden=true;
-    $('login-view').hidden=!!u; $('app').hidden=!u;
-    if(unsub){unsub();unsub=null;}
-    if(u){
-      unsub=fs.collection('photos').orderBy('createdAt','desc').limit(2000).onSnapshot(snap=>{
-        photos=snap.docs.map(d=>Object.assign({id:d.id},d.data()));
-        fillDatalists(); render();
-      },()=>{ $('list').innerHTML='<div class="emptylist"><strong>사진 목록을 불러오지 못했어요</strong>새로고침해 주세요.</div>'; });
-    } else { photos=[]; }
-  });
+  function logout(wrong){
+    pass=''; try{localStorage.removeItem('pass')}catch(_){}
+    clearInterval(pollTimer); photos=[];
+    $('boot').hidden=true; $('app').hidden=true; $('login-view').hidden=false;
+    if(wrong) $('lg-err').textContent='팀 비밀번호가 바뀌었어요. 새 비밀번호를 입력해 주세요.';
+  }
+  $('btn-logout').onclick=()=>logout(false);
+  function enter(){
+    $('boot').hidden=true; $('login-view').hidden=true; $('app').hidden=false;
+    load(); clearInterval(pollTimer);
+    pollTimer=setInterval(()=>{ if(!document.hidden && !$('view-list').hidden && $('lb').hidden) load(); },30000);
+  }
+  let loading=false;
+  async function load(){
+    if(loading) return; loading=true;
+    try{ const j=await api('list'); photos=j.photos||[]; fillDatalists(); render(); }
+    catch(e){ if(e.code!=='auth' && !photos.length) $('list').innerHTML='<div class="emptylist"><strong>사진 목록을 불러오지 못했어요</strong>인터넷 연결을 확인하고 새로고침을 눌러 주세요.</div>'; }
+    loading=false;
+  }
+  $('btn-refresh').onclick=load;
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden && pass && !$('app').hidden) load(); });
 
   // ---------- fields ----------
   try{ const saved=JSON.parse(localStorage.getItem('board')||'{}'); for(const k of ['name','dong','floor','work','room']) if(saved[k]) F[k].value=saved[k]; }catch(e){}
@@ -54,7 +74,7 @@
     $('view-cap').hidden=tab!=='cap'; $('view-list').hidden=tab!=='list';
     try{localStorage.setItem('tab',tab)}catch(e){}
   }
-  $('tab-cap').onclick=()=>show('cap'); $('tab-list').onclick=()=>show('list');
+  $('tab-cap').onclick=()=>show('cap'); $('tab-list').onclick=()=>{ show('list'); if(pass) load(); };
   show(IS_APP ? 'cap' : (location.hash==='#cap' ? 'cap' : (matchMedia('(min-width:900px)').matches ? 'list' : ((()=>{try{return localStorage.getItem('tab')}catch(e){return null}})()||'cap'))));
 
   // ---------- capture ----------
@@ -75,7 +95,7 @@
 
   async function compose(img){
     try{ await document.fonts.load('700 30px "Noto Sans KR"'); }catch(e){}
-    const MAX=2048; let w=img.naturalWidth,h=img.naturalHeight; const r=Math.min(1,MAX/Math.max(w,h)); w=Math.round(w*r); h=Math.round(h*r);
+    const MAX=1600; let w=img.naturalWidth,h=img.naturalHeight; const r=Math.min(1,MAX/Math.max(w,h)); w=Math.round(w*r); h=Math.round(h*r);
     const c=$('canvas'); c.width=w; c.height=h; const g=c.getContext('2d');
     g.drawImage(img,0,0,w,h);
     const s=Math.max(w,h)/2048;
@@ -110,28 +130,24 @@
   }
 
   $('btn-upload').onclick=async()=>{
-    const u=auth.currentUser; if(!u){ setStatus('다시 로그인해 주세요.','err'); return; }
-    const btn=$('btn-upload'); btn.disabled=true; setStatus('올리는 중…');
-    $('prog').hidden=false; $('prog-bar').style.width='0%';
+    const btn=$('btn-upload'); btn.disabled=true; setStatus('올리는 중… (몇 초 걸려요)');
+    $('prog').hidden=false; $('prog-bar').style.width='15%';
+    const tick=setInterval(()=>{ const b=$('prog-bar'); const w=parseFloat(b.style.width)||0; if(w<90) b.style.width=(w+6)+'%'; },300);
     try{
-      const blob=await new Promise(res=>$('canvas').toBlob(res,'image/jpeg',0.85));
-      const ref=fs.collection('photos').doc();
-      const path='photos/'+ref.id+'.jpg';
-      const task=st.ref(path).put(blob,{contentType:'image/jpeg'});
-      task.on('state_changed',snap=>{ $('prog-bar').style.width=Math.round(snap.bytesTransferred/snap.totalBytes*100)+'%'; });
-      await task;
-      const url=await st.ref(path).getDownloadURL();
-      await ref.set({name:F.name.value.trim(),dong:F.dong.value.trim(),floor:F.floor.value.trim(),work:F.work.value.trim(),date:F.date.value,room:F.room.value.trim(),note:F.note.value.trim(),action:'',
-        path,url,createdAt:new Date().toISOString(),by:u.email||''});
+      const dataUrl=$('canvas').toDataURL('image/jpeg',0.8);
+      const j=await api('upload',{image:dataUrl.split(',')[1],meta:{name:F.name.value.trim(),dong:F.dong.value.trim(),floor:F.floor.value.trim(),work:F.work.value.trim(),date:F.date.value,room:F.room.value.trim(),note:F.note.value.trim()}});
+      if(j.photo) photos.unshift(j.photo);
+      fillDatalists(); render();
+      $('prog-bar').style.width='100%';
       saveFields();
       setStatus('올렸어요. PC 사진 목록에 바로 나타나요.','ok');
       if(queue.length){ nextFromQueue(); }
       else { F.note.value=''; currentSrc=null; $('canvas').hidden=true; $('prev-actions').hidden=true; $('prev-empty').hidden=false; $('in-camera').value=''; $('in-pick').value=''; }
     }catch(e){
       btn.disabled=false;
-      setStatus(e&&e.code==='storage/unauthorized'?'올릴 권한이 없어요. 관리자에게 보안 규칙 설정을 확인해 달라고 해 주세요.':'올리지 못했어요. 인터넷 연결을 확인하고 다시 눌러 주세요.','err');
+      setStatus(e.code==='auth'?'팀 비밀번호가 바뀌었어요. 다시 로그인해 주세요.':e.code==='network'?'인터넷 연결을 확인하고 다시 눌러 주세요.':'올리지 못했어요. 잠시 후 다시 눌러 주세요.','err');
     }
-    $('prog').hidden=true;
+    clearInterval(tick); $('prog').hidden=true;
   };
   function setStatus(t,kind){ const s=$('status'); s.textContent=t; s.className='status'+(kind?' '+kind:''); }
 
@@ -158,7 +174,7 @@
     const byDate={}; list.forEach(p=>{(byDate[p.date||'']=byDate[p.date||'']||[]).push(p)});
     box.innerHTML=Object.keys(byDate).sort().reverse().map(d=>
       '<div class="day"><h2>'+esc(dotDate(d)||'날짜 없음')+' · '+byDate[d].length+'장</h2><div class="grid">'+
-      byDate[d].map(p=>'<div class="card" data-id="'+esc(p.id)+'"><button class="open" aria-label="크게 보기"><img loading="lazy" src="'+esc(p.url)+'" alt="'+esc([p.dong,p.floor,p.room,p.work].filter(Boolean).join(' '))+'"></button>'+
+      byDate[d].map(p=>'<div class="card" data-id="'+esc(p.id)+'"><button class="open" aria-label="크게 보기"><img loading="lazy" referrerpolicy="no-referrer" src="'+esc(thumbUrl(p))+'" data-alt="'+esc(altUrl(p))+'" alt="'+esc([p.dong,p.floor,p.room,p.work].filter(Boolean).join(' '))+'"></button>'+
         '<div class="meta">'+(p.work?'<span class="chip">'+esc(p.work)+'</span>':'')+'<span>'+esc([p.dong,p.floor].filter(Boolean).join(' '))+'</span><span class="where">'+esc(p.room||'')+'</span></div>'+
         (p.note?'<div class="note">'+esc(p.note)+'</div>':'')+
         '<div class="act"><span class="act-label">조치</span>'+actBtns(p)+'</div></div>').join('')+
@@ -168,7 +184,7 @@
     const p=photos.find(x=>x.id===id); if(!p) return;
     const next=p.action===v?'':v, prev=p.action;
     p.action=next; render(); if(openPhoto&&openPhoto.id===id) syncLbAct();
-    try{ await fs.collection('photos').doc(id).update({action:next}); }
+    try{ await api('setAction',{id,value:next}); }
     catch(e){ p.action=prev; render(); if(openPhoto&&openPhoto.id===id) syncLbAct(); }
   }
   $('list').addEventListener('click',e=>{
@@ -180,9 +196,9 @@
   // ---------- lightbox ----------
   let delArmed=false;
   function openLb(p){
-    openPhoto=p; $('lb-img').src=p.url; $('lb-img').alt=[p.dong,p.floor,p.room].join(' ');
+    openPhoto=p; $('lb-img').removeAttribute('data-tried'); $('lb-img').dataset.alt=altUrl(p,1600); $('lb-img').src=thumbUrl(p,1600); $('lb-img').alt=[p.dong,p.floor,p.room].join(' ');
     $('lb-info').innerHTML=[['공사명',p.name],['위치',p.dong],['층',p.floor],['공종',p.work],['일자',dotDate(p.date)],['실',p.room],['내용',p.note]].filter(x=>x[1]).map(([k,v])=>'<span class="chip">'+k+'</span><span>'+esc(v)+'</span>').join(' ');
-    $('lb-dl').href=p.url; $('lb-dl').hidden=IS_APP;
+    $('lb-dl').href=viewUrl(p); $('lb-dl').hidden=IS_APP;
     $('lb-del').hidden=false; $('lb-del').textContent='삭제'; delArmed=false;
     syncLbAct(); $('lb').hidden=false;
   }
@@ -195,7 +211,7 @@
   $('lb-del').onclick=async()=>{
     const p=openPhoto; if(!p) return;
     if(!delArmed){ delArmed=true; $('lb-del').textContent='정말 삭제할까요? 한 번 더 누르세요'; return; }
-    try{ await fs.collection('photos').doc(p.id).delete(); if(p.path){ try{ await st.ref(p.path).delete(); }catch(e){} } closeLb(); }
+    try{ await api('delete',{id:p.id}); photos=photos.filter(x=>x.id!==p.id); render(); closeLb(); }
     catch(e){ $('lb-del').textContent='삭제하지 못했어요'; }
   };
 
@@ -205,4 +221,6 @@
     if(!$('view-list').hidden && IS_APP){ show('cap'); return true; }
     return false;
   };
+  // ---------- start ----------
+  if(pass){ enter(); } else { $('boot').hidden=true; $('login-view').hidden=false; }
 })();

@@ -102,9 +102,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 <div class="wrap" id="login-view" hidden>
   <form class="login" id="login-form">
     <h2>현장 사진 보드판</h2>
-    <p>팀 계정으로 로그인하세요. 한 번 로그인하면 이 기기에서는 계속 유지돼요.</p>
-    <input id="lg-email" type="email" autocomplete="username" placeholder="이메일" required>
-    <input id="lg-pw" type="password" autocomplete="current-password" placeholder="비밀번호" required>
+    <p>팀 비밀번호를 입력하세요. 한 번 입력하면 이 기기에서는 계속 유지돼요.</p>
+    <input id="lg-pw" type="password" autocomplete="current-password" placeholder="팀 비밀번호" required>
     <button class="btn primary" id="lg-btn" type="submit">로그인</button>
     <div class="status err" id="lg-err" role="status"></div>
   </form>
@@ -163,13 +162,14 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
       <select id="flt-act" aria-label="조치"><option value="">조치 전체</option><option value="O">조치 O</option><option value="X">조치 X</option><option value="-">조치 미입력</option></select>
       <input id="flt-q" type="search" placeholder="층, 실, 공사명 검색">
       <span class="count" id="count"></span>
+      <button class="linkbtn" id="btn-refresh">새로고침</button>
     </div>
     <div id="list"></div>
   </section>
 </div>
 
 <div class="lb" id="lb" hidden>
-  <div class="imgbox"><img id="lb-img" alt=""></div>
+  <div class="imgbox"><img id="lb-img" alt="" referrerpolicy="no-referrer"></div>
   <div class="bar">
     <div class="info" id="lb-info"></div>
     <div class="btns">
@@ -182,10 +182,6 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 </div>
 
 <datalist id="dl-name"></datalist><datalist id="dl-dong"></datalist><datalist id="dl-floor"></datalist><datalist id="dl-work"></datalist><datalist id="dl-room"></datalist><datalist id="dl-note"></datalist>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>

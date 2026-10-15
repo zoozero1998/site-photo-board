@@ -1,9 +1,4 @@
-// Firebase 콘솔 → 프로젝트 설정 → 내 앱(웹)에서 복사한 값을 넣습니다.
-window.FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+// 구글 Apps Script 웹 앱 배포 주소(…/exec)를 넣습니다.
+window.APP_CONFIG = {
+  scriptUrl: ""
 };
