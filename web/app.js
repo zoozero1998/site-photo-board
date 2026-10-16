@@ -48,7 +48,7 @@
   $('btn-logout').onclick=()=>logout(false);
   function enter(){
     $('boot').hidden=true; $('login-view').hidden=true; $('app').hidden=false;
-    load(); clearInterval(pollTimer);
+    load(); updateBadge(); pump(); clearInterval(pollTimer);
     pollTimer=setInterval(()=>{ if(!document.hidden && !$('view-list').hidden && $('lb').hidden) load(); },30000);
   }
   let loading=false;
@@ -93,9 +93,10 @@
     img.src=url;
   }
 
+  const fontReady=(document.fonts&&document.fonts.load)?document.fonts.load('700 30px "Noto Sans KR"').catch(()=>{}):Promise.resolve();
   async function compose(img){
-    try{ await document.fonts.load('700 30px "Noto Sans KR"'); }catch(e){}
-    const MAX=1600; let w=img.naturalWidth,h=img.naturalHeight; const r=Math.min(1,MAX/Math.max(w,h)); w=Math.round(w*r); h=Math.round(h*r);
+    try{ await Promise.race([fontReady, new Promise(r=>setTimeout(r,800))]); }catch(e){}
+    const MAX=1400; let w=img.naturalWidth,h=img.naturalHeight; const r=Math.min(1,MAX/Math.max(w,h)); w=Math.round(w*r); h=Math.round(h*r);
     const c=$('canvas'); c.width=w; c.height=h; const g=c.getContext('2d');
     g.drawImage(img,0,0,w,h);
     const s=Math.max(w,h)/2048;
@@ -129,25 +130,54 @@
     $('btn-upload').textContent = queue.length ? '올리기 (남은 '+queue.length+'장)' : '올리기';
   }
 
-  $('btn-upload').onclick=async()=>{
-    const btn=$('btn-upload'); btn.disabled=true; setStatus('올리는 중… (몇 초 걸려요)');
-    $('prog').hidden=false; $('prog-bar').style.width='15%';
-    const tick=setInterval(()=>{ const b=$('prog-bar'); const w=parseFloat(b.style.width)||0; if(w<90) b.style.width=(w+6)+'%'; },300);
+  // ---------- background upload outbox ----------
+  // Photos are saved on the phone first and sent in the background, so the next shot can start right away.
+  // The outbox survives closing the app (IndexedDB) and retries when the connection comes back.
+  const ob={mem:[],db:null};
+  const idb=new Promise(res=>{ try{ const r=indexedDB.open('outbox',1); r.onupgradeneeded=()=>r.result.createObjectStore('items',{keyPath:'key'}); r.onsuccess=()=>res(r.result); r.onerror=()=>res(null); }catch(e){ res(null); } });
+  async function obAll(){ const d=await idb; if(!d) return ob.mem.slice(); return new Promise(res=>{ const q=d.transaction('items').objectStore('items').getAll(); q.onsuccess=()=>res(q.result.sort((a,b)=>a.key-b.key)); q.onerror=()=>res([]); }); }
+  async function obPut(it){ const d=await idb; if(!d){ ob.mem.push(it); return; } await new Promise(res=>{ const t=d.transaction('items','readwrite'); t.objectStore('items').put(it); t.oncomplete=res; t.onerror=res; }); }
+  async function obDel(key){ const d=await idb; if(!d){ ob.mem=ob.mem.filter(x=>x.key!==key); return; } await new Promise(res=>{ const t=d.transaction('items','readwrite'); t.objectStore('items').delete(key); t.oncomplete=res; t.onerror=res; }); }
+
+  let sending=false, retryTimer=null;
+  async function updateBadge(){
+    const n=(await obAll()).length, el=$('outbox');
+    if(!n){ el.hidden=!el.dataset.done; el.className='outbox ok'; el.textContent='✓ 모두 올라갔어요'; return; }
+    el.hidden=false; el.dataset.done='1';
+    el.className='outbox'+(el.dataset.err?' err':'');
+    el.textContent=(el.dataset.err? '⚠ 연결이 불안정해요. 자동으로 다시 보내는 중 · ' : '⏫ 보내는 중 · ')+'남은 사진 '+n+'장';
+  }
+  async function pump(){
+    if(sending||!pass) return; sending=true; clearTimeout(retryTimer);
     try{
-      const dataUrl=$('canvas').toDataURL('image/jpeg',0.8);
-      const j=await api('upload',{image:dataUrl.split(',')[1],meta:{name:F.name.value.trim(),dong:F.dong.value.trim(),floor:F.floor.value.trim(),work:F.work.value.trim(),date:F.date.value,room:F.room.value.trim(),note:F.note.value.trim()}});
-      if(j.photo) photos.unshift(j.photo);
-      fillDatalists(); render();
-      $('prog-bar').style.width='100%';
-      saveFields();
-      setStatus('올렸어요. PC 사진 목록에 바로 나타나요.','ok');
-      if(queue.length){ nextFromQueue(); }
-      else { F.note.value=''; currentSrc=null; $('canvas').hidden=true; $('prev-actions').hidden=true; $('prev-empty').hidden=false; $('in-camera').value=''; $('in-pick').value=''; }
-    }catch(e){
-      btn.disabled=false;
-      setStatus(e.code==='auth'?'팀 비밀번호가 바뀌었어요. 다시 로그인해 주세요.':e.code==='network'?'인터넷 연결을 확인하고 다시 눌러 주세요.':'올리지 못했어요. 잠시 후 다시 눌러 주세요.','err');
-    }
-    clearInterval(tick); $('prog').hidden=true;
+      let items=await obAll();
+      while(items.length){
+        const it=items[0];
+        try{
+          const j=await api('upload',{image:it.image,meta:it.meta});
+          if(j.photo && !photos.some(p=>p.id===j.photo.id)){ photos.unshift(j.photo); fillDatalists(); render(); }
+          await obDel(it.key); delete $('outbox').dataset.err;
+        }catch(e){
+          if(e.code==='auth') break;
+          $('outbox').dataset.err='1'; await updateBadge();
+          retryTimer=setTimeout(pump, 8000); break;
+        }
+        items=await obAll(); await updateBadge();
+      }
+    } finally { sending=false; updateBadge(); }
+  }
+  window.addEventListener('online',()=>pump());
+
+  $('btn-upload').onclick=async()=>{
+    const btn=$('btn-upload'); btn.disabled=true;
+    const image=$('canvas').toDataURL('image/jpeg',0.75).split(',')[1];
+    const meta={name:F.name.value.trim(),dong:F.dong.value.trim(),floor:F.floor.value.trim(),work:F.work.value.trim(),date:F.date.value,room:F.room.value.trim(),note:F.note.value.trim()};
+    await obPut({key:Date.now()+Math.random(),image,meta});
+    saveFields();
+    setStatus('저장했어요. 뒤에서 자동으로 올라가니 바로 다음 사진을 찍으세요.','ok');
+    updateBadge(); pump();
+    if(queue.length){ nextFromQueue(); }
+    else { F.note.value=''; currentSrc=null; $('canvas').hidden=true; $('prev-actions').hidden=true; $('prev-empty').hidden=false; $('in-camera').value=''; $('in-pick').value=''; }
   };
   function setStatus(t,kind){ const s=$('status'); s.textContent=t; s.className='status'+(kind?' '+kind:''); }
 

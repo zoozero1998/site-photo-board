@@ -94,6 +94,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .login input{font:500 16px var(--sans);padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);width:100%}
 .hdr-right{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .linkbtn{border:0;background:none;color:var(--muted);font:500 13px var(--sans);cursor:pointer;padding:6px;text-decoration:underline}
+.outbox{flex:1 1 100%;font-size:14px;font-weight:600;padding:10px 12px;border-radius:8px;background:var(--chip);color:var(--ink)}
+.outbox.ok{color:var(--accent)}
+.outbox.err{color:var(--warn)}
 .prog{width:100%;height:6px;background:var(--chip);border-radius:3px;overflow:hidden}
 .prog>i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
 </style>
@@ -135,7 +138,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
         </div>
         <p class="hint">입력한 내용은 이 기기에 기억돼서 다음 촬영 때 그대로 채워져요. 일자는 매일 오늘 날짜로 바뀝니다.</p>
         <div class="actions">
-          <button class="btn primary big" id="btn-shoot">📷 사진 찍기</button>
+          <div class="outbox" id="outbox" role="status" hidden></div>
+        <button class="btn primary big" id="btn-shoot">📷 사진 찍기</button>
           <button class="btn" id="btn-pick">앨범에서 고르기</button>
         </div>
         <input type="file" id="in-camera" accept="image/*" capture="environment" hidden>
@@ -148,8 +152,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
           <button class="btn primary" id="btn-upload">올리기</button>
           <button class="btn" id="btn-retake">다시 찍기</button>
         </div>
-        <div class="prog" id="prog" hidden><i id="prog-bar"></i></div>
-        <div class="status" id="status" role="status"></div>
+                <div class="status" id="status" role="status"></div>
       </div>
     </div>
   </section>
